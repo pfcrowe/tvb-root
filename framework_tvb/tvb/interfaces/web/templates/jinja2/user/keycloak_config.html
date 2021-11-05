@@ -19,7 +19,7 @@
         onLoad: 'check-sso',
         silentCheckSsoRedirectUri: window.location.origin + deploy_context + '/user/check_sso',
         promiseType: 'native',
-        checkSsoLoginScope: 'profile email group'
+        checkSsoLoginScope: 'profile email'
     }).then(function () {
         keycloak_initialized = true
     }).catch(function () {
