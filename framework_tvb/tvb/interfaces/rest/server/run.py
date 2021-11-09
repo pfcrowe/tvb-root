@@ -31,7 +31,8 @@
 import os
 import sys
 
-from flask import Flask
+from flask import Flask, render_template
+from flask_restx.apidoc import apidoc
 from gevent.pywsgi import WSGIServer
 from tvb.basic.logger.builder import get_logger
 from tvb.basic.profile import TvbProfile
@@ -79,6 +80,10 @@ def build_path(namespace):
 
 
 def initialize_flask():
+    @apidoc.apidoc.add_app_template_global
+    def swagger_static(filename):
+        return "./swaggerui/{0}".format(filename)
+
     # creating the flask app
     app = Flask(__name__)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -90,6 +95,10 @@ def initialize_flask():
                   title="Rest services for TVB",
                   doc=TvbProfile.current.web.REST_DEPLOY_CONTEXT + "/doc/",
                   version=TvbProfile.current.version.CURRENT_VERSION)
+
+    @api.documentation
+    def custom_ui():
+        return render_template("swagger-ui.html", title=api.title, specs_url="./swagger.json")
 
     # Users namespace
     name_space_users = api.namespace(build_path(RestNamespace.USERS), description="TVB-REST APIs for users management")
