@@ -30,7 +30,7 @@ pipeline {
                     withDockerRegistry(credentialsId: 'tvb_on_docker_hub') {
                         def dockerContext = "tvb_build/docker"
                         def dockerFile = "${dockerContext}/Dockerfile-run"
-                        def dockerImage = docker.build("${FULL_DOCKER_IMAGE_NAME}:vre-deploy", "--build-arg LAST_SHA='hdaduiahuidhashdiu12312312312312412415' -f ${dockerFile} ${dockerContext}")
+                        def dockerImage = docker.build("${FULL_DOCKER_IMAGE_NAME}:vre-deploy", "--build-arg LAST_SHA='hdaduiahuidhashdiu12312312312312412416' -f ${dockerFile} ${dockerContext}")
                         dockerImage.push()
                     }
                 }
