@@ -12,10 +12,13 @@ from tvb.rateML.run.regular_run import regularRun
 
 import os.path
 import numpy as np
-import pycuda.autoinit
-import pycuda.driver as drv
-from pycuda.compiler import SourceModule
-import pycuda.gpuarray as gpuarray
+try:
+	import pycuda.autoinit
+	import pycuda.driver as drv
+	from pycuda.compiler import SourceModule
+	import pycuda.gpuarray as gpuarray
+except ImportError:
+	logging.warning('pycuda not available, rateML driver not usable.')
 
 import matplotlib.pyplot as plt
 
@@ -126,7 +129,7 @@ class Driver_Setup:
 		parser.add_argument('-w', '--write_data', default=False, help="write output data to file: 'tavg_data", action='store_true')
 		parser.add_argument('-g', '--gpu_info', default=False, help="show gpu info", action='store_true')
 		parser.add_argument('-dt', '--delta_time', default=0.1, type=float, help="dt for simulation")
-		parser.add_argument('-sm', '--speeds_min', default=3	, type=float, help="min speed for temporal buffer")
+		parser.add_argument('-sm', '--speeds_min', default=1, type=float, help="min speed for temporal buffer")
 
 		args = parser.parse_args()
 		return args
@@ -223,8 +226,7 @@ class Driver_Execute(Driver_Setup):
 		try:
 			with open(source_file, 'r') as fd:
 				source = fd.read()
-				source = source.replace('pi', '%ff' % (np.pi, ))
-				source = source.replace('inf', 'INFINITY')
+				source = source.replace('M_PI_F', '%ff' % (np.pi, ))
 				opts = ['--ptxas-options=-v', '-maxrregcount=32']
 				if lineinfo:
 					opts.append('-lineinfo')

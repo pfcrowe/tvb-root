@@ -12,10 +12,13 @@ from tvb.rateML.run.regular_run import regularRun
 
 import os.path
 import numpy as np
-import pycuda.autoinit
-import pycuda.driver as drv
-from pycuda.compiler import SourceModule
-import pycuda.gpuarray as gpuarray
+try:
+	import pycuda.autoinit
+	import pycuda.driver as drv
+	from pycuda.compiler import SourceModule
+	import pycuda.gpuarray as gpuarray
+except ImportError:
+	logging.warning('pycuda not available, rateML driver not usable.')
 
 import matplotlib.pyplot as plt
 
@@ -41,11 +44,12 @@ class Driver_Setup:
 		self.tavg_period = 1.0
 		self.n_inner_steps = int(self.tavg_period / self.dt)
 
-		# bufferlength is based on the minimum of the first swept parameter (speed for many tvb models)
 		self.params = self.setup_params(
 		self.args.n_sweep_arg0,
 		self.args.n_sweep_arg1,
 		)
+
+		# bufferlength is based on the minimum of the first swept parameter (speed for many tvb models)
 		self.n_work_items, self.n_params = self.params.shape
 		self.buf_len_ = ((self.lengths / self.args.speeds_min / self.dt).astype('i').max() + 1)
 		self.buf_len = 2 ** np.argwhere(2 ** np.r_[:30] > self.buf_len_)[0][0]  # use next power of
@@ -98,8 +102,8 @@ class Driver_Setup:
 			raise
 
 	def tvb_connectivity(self, tvbnodes):
-		# white_matter = connectivity.Connectivity.from_file(source_file="connectivity_"+str(tvbnodes)+".zip")
-		white_matter = connectivity.Connectivity.from_file(source_file="paupau.zip")
+		white_matter = connectivity.Connectivity.from_file(source_file="connectivity_"+str(tvbnodes)+".zip")
+		# white_matter = connectivity.Connectivity.from_file(source_file="paupau.zip")
 		white_matter.configure()
 		return white_matter
 
@@ -111,8 +115,8 @@ class Driver_Setup:
 		parser.add_argument('-s1', '--n_sweep_arg1', default=4, help='num grid points for 2st parameter', type=int)
 		parser.add_argument('-n', '--n_time', default=400, help='number of time steps to do', type=int)
 		parser.add_argument('-v', '--verbose', default=False, help='increase logging verbosity', action='store_true')
-		parser.add_argument('-m', '--model', default='montbrio', help="neural mass model to be used during the simulation")
-		parser.add_argument('-s', '--states', default=2, type=int, help="number of states for model")
+		parser.add_argument('-m', '--model', default='epileptor', help="neural mass model to be used during the simulation")
+		parser.add_argument('-s', '--states', default=6, type=int, help="number of states for model")
 		parser.add_argument('-x', '--exposures', default=2, type=int, help="number of exposures for model")
 		parser.add_argument('-l', '--lineinfo', default=False, help='generate line-number information for device code.', action='store_true')
 		parser.add_argument('-bx', '--blockszx', default=8, type=int, help="gpu block size x")
@@ -123,7 +127,7 @@ class Driver_Setup:
 		parser.add_argument('-w', '--write_data', default=False, help="write output data to file: 'tavg_data", action='store_true')
 		parser.add_argument('-g', '--gpu_info', default=False, help="show gpu info", action='store_true')
 		parser.add_argument('-dt', '--delta_time', default=0.1, type=float, help="dt for simulation")
-		parser.add_argument('-sm', '--speeds_min', default=3	, type=float, help="min speed for temporal buffer")
+		parser.add_argument('-sm', '--speeds_min', default=1, type=float, help="min speed for temporal buffer")
 
 		args = parser.parse_args()
 		return args
@@ -136,8 +140,8 @@ class Driver_Setup:
 		'''
 		This code generates the parameters ranges that need to be set
 		'''
-		sweeparam0 = np.linspace(1.0, 1.0, n0)
-		sweeparam1 = np.linspace(1.0, 1.0, n1)
+		sweeparam0 = np.linspace(0.0, 2.0, n0)
+		sweeparam1 = np.linspace(1.6, 3.0, n1)
 		params = itertools.product(
 		sweeparam0,
 		sweeparam1,

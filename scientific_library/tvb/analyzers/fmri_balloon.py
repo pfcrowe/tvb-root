@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 #
 #
-#  TheVirtualBrain-Scientific Package. This package holds all simulators, and 
+# TheVirtualBrain-Scientific Package. This package holds all simulators, and
 # analysers necessary to run brain-simulations. You can use it stand alone or
 # in conjunction with TheVirtualBrain-Framework Package. See content of the
 # documentation-folder for more details. See also http://www.thevirtualbrain.org
 #
-# (c) 2012-2020, Baycrest Centre for Geriatric Care ("Baycrest") and others
+# (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
 #
 # This program is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software Foundation,
@@ -56,9 +56,21 @@ References:
 """
 
 import numpy
+
 import tvb.datatypes.time_series as time_series
-from tvb.basic.neotraits.api import HasTraits, Attr, NArray, Range, Float
+from tvb.basic.neotraits.api import HasTraits, TVBEnum, Attr, NArray, Range, Float, EnumAttr
 import tvb.simulator.integrators as integrators_module
+
+
+class NeuralInputTransformations(TVBEnum):
+    ABS_DIFF = "abs_diff"
+    SUM = "sum"
+    NONE = "none"
+
+
+class BoldModels(TVBEnum):
+    LINEAR = "linear"
+    NONLINEAR = "nonlinear"
 
 
 class BalloonModel(HasTraits):
@@ -79,30 +91,20 @@ class BalloonModel(HasTraits):
         label="Time Series",
         required=True,
         doc="""The timeseries that represents the input neural activity""")
-    # it also sets the bold sampling period.
-    dt = Float(
-        label=":math:`dt`",
-        default=0.002,
-        required=True,
-        doc="""The integration time step size for the balloon model (s).
-        If none is provided, by default, the TimeSeries sample period is used.""")
 
     integrator = Attr(
         field_type=integrators_module.Integrator,
         label="Integration scheme",
         default=integrators_module.HeunDeterministic(),
         required=True,
-        doc=""" A tvb.simulator.Integrator object which is
-        an integration scheme with supporting attributes such as 
-        integration step size and noise specification for stochastic 
-        methods. It is used to compute the time courses of the balloon model state 
-        variables.""")
+        doc=""" A tvb.simulator.Integrator object which is an integration
+        scheme with supporting attributes such as integration step size and
+        noise specification for stochastic methods. It is used to compute the
+        time courses of the balloon model state variables.""")
 
-    bold_model = Attr(
-        field_type=str,
+    bold_model = EnumAttr(
+        default=BoldModels.NONLINEAR,
         label="Select BOLD model equations",
-        choices=("linear", "nonlinear"),
-        default="nonlinear",
         doc="""Select the set of equations for the BOLD model.""")
 
     RBM = Attr(
@@ -113,11 +115,15 @@ class BalloonModel(HasTraits):
         doc="""Select classical vs revised BOLD model (CBM or RBM).
         Coefficients  k1, k2 and k3 will be derived accordingly.""")
 
-    neural_input_transformation = Attr(
-        field_type=str,
+    normalize_neural_input = Attr(
+            field_type=bool,
+            default=False,
+            required=True,
+            doc="""Set if the mean should be subtracted from the neural input.""")
+
+    neural_input_transformation = EnumAttr(
+        default=NeuralInputTransformations.NONE,
         label="Neural input transformation",
-        choices=("none", "abs_diff", "sum"),
-        default="none",
         doc=""" This represents the operation to perform on the state-variable(s) of
         the model used to generate the input TimeSeries. ``none`` takes the
         first state-variable as neural input; `` abs_diff`` is the absolute
@@ -209,16 +215,6 @@ class BalloonModel(HasTraits):
         result_shape = self.result_shape(input_shape)
         self.log.debug("Result shape will be: %s" % str(result_shape))
 
-        if self.dt is None:
-            self.dt = self.time_series.sample_period / 1000.  # (s) integration time step
-            msg = "Integration time step size for the balloon model is %s seconds" % str(self.dt)
-            self.log.debug(msg)
-
-        # NOTE: Avoid upsampling ...
-        if self.dt < (self.time_series.sample_period / 1000.):
-            msg = "Integration time step shouldn't be smaller than the sampling period of the input signal."
-            self.log.error(msg)
-
         balloon_nvar = 4
 
         # NOTE: hard coded initial conditions
@@ -232,7 +228,7 @@ class BalloonModel(HasTraits):
         k1, k2, k3 = k[0], k[1], k[2]
 
         # prepare integrator
-        self.integrator.dt = self.dt
+        self.integrator.dt = 1. / self.time_series.sample_rate # s
         self.integrator.configure()
         self.log.debug("Integration time step size will be: %s seconds" % str(self.integrator.dt))
 
@@ -249,7 +245,8 @@ class BalloonModel(HasTraits):
             self.log.warning("NaNs detected in the neural activity!!")
 
         # normalise the time-series.
-        neural_activity = neural_activity - neural_activity.mean(axis=0)[numpy.newaxis, :]
+        if self.normalize_neural_input:
+            neural_activity = neural_activity - neural_activity.mean(axis=0)[numpy.newaxis, :]
 
         # solve equations
         for step in range(1, t_int.shape[0]):
@@ -264,7 +261,6 @@ class BalloonModel(HasTraits):
         v = state[:, 2, :]
         q = state[:, 3, :]
 
-        # import pdb; pdb.set_trace()
 
         # BOLD models
         if self.bold_model == "nonlinear":
@@ -284,12 +280,10 @@ class BalloonModel(HasTraits):
             y_bold = numpy.array(self.V0 * ((k1 + k2) * (1. - q) + (k3 - k2) * (1. - v)))
             y_b = y_bold[:, numpy.newaxis, :, :]
 
-        sample_period = 1. / self.dt
-
         bold_signal = time_series.TimeSeriesRegion(
             data=y_b,
             time=t_int,
-            sample_period=sample_period,
+            sample_period=self.integrator.dt, # s
             sample_period_unit='s')
 
         return bold_signal
@@ -325,20 +319,21 @@ class BalloonModel(HasTraits):
         """
 
         self.log.debug("Computing: %s on the input time series" % str(mode))
+        unit_factor = time_series.sample_rate * time_series.sample_period 
 
-        if mode == "none":
+        if mode == NeuralInputTransformations.NONE:
             ts = time_series.data[:, 0, :, :]
             ts = ts[:, numpy.newaxis, :, :]
-            t_int = time_series.time / 1000.  # (s)
+            t_int = time_series.time / unit_factor  # (s)
 
-        elif mode == "abs_diff":
+        elif mode == NeuralInputTransformations.ABS_DIFF:
             ts = abs(numpy.diff(time_series.data, axis=0))
-            t_int = (time_series.time[1:] - time_series.time[0:-1]) / 1000.  # (s)
+            t_int = (time_series.time[1:] - time_series.time[0:-1]) / unit_factor  # (s)
 
-        elif mode == "sum":
+        elif mode == NeuralInputTransformations.SUM:
             ts = numpy.sum(time_series.data, axis=1)
             ts = ts[:, numpy.newaxis, :, :]
-            t_int = time_series.time / 1000.  # (s)
+            t_int = time_series.time / unit_factor  # (s)
 
         else:
             self.log.error("Bad operation/transformation mode, must be one of:")

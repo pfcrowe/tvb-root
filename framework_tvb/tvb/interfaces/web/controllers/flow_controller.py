@@ -6,7 +6,7 @@
 # TheVirtualBrain-Scientific Package (for simulators). See content of the
 # documentation-folder for more details. See also http://www.thevirtualbrain.org
 #
-# (c) 2012-2020, Baycrest Centre for Geriatric Care ("Baycrest") and others
+# (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
 #
 # This program is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software Foundation,
@@ -41,13 +41,14 @@ import cherrypy
 import formencode
 import numpy
 import six
+from tvb.adapters.forms.equation_forms import get_form_for_equation
 
+from tvb.basic.neotraits.api import TVBEnum, SubformEnum
 from tvb.basic.neotraits.ex import TraitValueError
 from tvb.core.adapters import constants
 from tvb.core.adapters.abcadapter import ABCAdapter
 from tvb.core.adapters.abcdisplayer import ABCDisplayer
 from tvb.core.adapters.exceptions import LaunchException
-from tvb.core.entities.file.files_helper import FilesHelper
 from tvb.core.entities.filters.chain import FilterChain
 from tvb.core.entities.load import load_entity_by_gid
 from tvb.core.neocom import h5
@@ -57,15 +58,19 @@ from tvb.core.neotraits.view_model import DataTypeGidAttr
 from tvb.core.services.exceptions import OperationException
 from tvb.core.services.operation_service import OperationService, RANGE_PARAMETER_1, RANGE_PARAMETER_2
 from tvb.core.services.project_service import ProjectService
-from tvb.core.utils import url2path, string2bool
+from tvb.core.utils import url2path
+from tvb.storage.storage_interface import StorageInterface
+from tvb.storage.h5.utils import string2bool
 from tvb.interfaces.web.controllers import common
 from tvb.interfaces.web.controllers.autologging import traced
 from tvb.interfaces.web.controllers.base_controller import BaseController
 from tvb.interfaces.web.controllers.common import InvalidFormValues
-from tvb.interfaces.web.controllers.decorators import expose_fragment, handle_error, check_user, expose_json
+from tvb.interfaces.web.controllers.decorators import expose_fragment, handle_error, check_user, expose_json, \
+    using_template
 from tvb.interfaces.web.controllers.decorators import expose_page, settings, context_selected, expose_numpy_array
 from tvb.interfaces.web.controllers.simulator.simulator_controller import SimulatorController
 from tvb.interfaces.web.entities.context_selected_adapter import SelectedAdapterContext
+from tvb.adapters.creators.local_connectivity_creator import LocalConnectivityCreatorModel, KEY_LCONN
 
 KEY_CONTENT = ABCDisplayer.KEY_CONTENT
 FILTER_FIELDS = "fields"
@@ -89,9 +94,9 @@ class FlowController(BaseController):
     def __init__(self):
         BaseController.__init__(self)
         self.context = SelectedAdapterContext()
-        self.files_helper = FilesHelper()
         self.operation_services = OperationService()
         self.simulator_controller = SimulatorController()
+        self.enum_members = SubformEnum.get_enum_members()
 
         analyze_category, groups = self.algorithm_service.get_analyze_groups()
         adapters_list = []
@@ -100,7 +105,7 @@ class FlowController(BaseController):
             if len(adapter_group.children) > 1:
                 ids = [str(child.id) for child in adapter_group.children]
                 ids = ','.join(ids)
-                adapter_link = '/flow/show_group_of_algorithms/' + str(analyze_category.id) + "/" + ids
+                adapter_link = self.build_path('/flow/show_group_of_algorithms/' + str(analyze_category.id) + "/" + ids)
             else:
                 adapter_link = self.get_url_adapter(analyze_category.id, adapter_group.children[0].id)
 
@@ -129,7 +134,7 @@ class FlowController(BaseController):
             message = 'Could not load analyzers!'
             common.set_warning_message(message)
             self.logger.warning(message)
-            raise cherrypy.HTTPRedirect('/tvb')
+            self.redirect('/tvb')
 
     @expose_page
     @settings
@@ -141,6 +146,7 @@ class FlowController(BaseController):
         template_specification = dict(mainContent="header_menu", section_name='connectivity', controlPage=None,
                                       title="Select an algorithm", displayControl=False, subsection_name='step',
                                       submenu_list=self.connectivity_submenu)
+        common.add2session(KEY_LCONN, LocalConnectivityCreatorModel)
         return self.fill_default_attributes(template_specification)
 
     @staticmethod
@@ -157,7 +163,7 @@ class FlowController(BaseController):
             back_page_link = '/project/viewoperations/' + str(project.id)
         else:
             back_page_link = '/project/editstructure/' + str(project.id)
-        return back_page_link
+        return BaseController.build_path(back_page_link)
 
     @expose_page
     @settings
@@ -216,7 +222,7 @@ class FlowController(BaseController):
         back_page_link = self._compute_back_link(back_page, project)
 
         if algorithm is None:
-            raise cherrypy.HTTPRedirect("/tvb?error=True")
+            self.redirect("/tvb?error=True")
 
         if cherrypy.request.method == 'POST' and cancel:
             raise cherrypy.HTTPRedirect(back_page_link)
@@ -231,7 +237,7 @@ class FlowController(BaseController):
             template_specification = self.get_template_for_adapter(project.id, step_key, algorithm,
                                                                    submit_link, is_burst=is_burst)
         if template_specification is None:
-            raise cherrypy.HTTPRedirect('/tvb')
+            self.redirect('/tvb')
 
         if KEY_CONTROLLS not in template_specification:
             template_specification[KEY_CONTROLLS] = None
@@ -398,8 +404,8 @@ class FlowController(BaseController):
         algorithm = self.algorithm_service.get_algorithm_by_identifier(algo_id)
         adapter_instance = ABCAdapter.build_adapter(algorithm)
         entity = load_entity_by_gid(entity_gid)
-        storage_path = self.files_helper.get_project_folder(entity.parent_operation.project,
-                                                            str(entity.fk_from_operation))
+        storage_path = StorageInterface().get_project_folder(entity.parent_operation.project.name,
+                                                             str(entity.fk_from_operation))
         adapter_instance.storage_path = storage_path
         method = getattr(adapter_instance, method_name)
         if kwargs:
@@ -490,7 +496,7 @@ class FlowController(BaseController):
 
         algorithm = self.algorithm_service.get_algorithm_by_identifier(algorithm_id)
         if is_upload:
-            submit_link = "/project/launchloader/" + str(project_id) + "/" + str(algorithm_id)
+            submit_link = BaseController.build_path("/project/launchloader/" + str(project_id) + "/" + str(algorithm_id))
         else:
             submit_link = self.get_url_adapter(algorithm.fk_category, algorithm.id, back_page)
 
@@ -514,7 +520,7 @@ class FlowController(BaseController):
         # Display the inputs tree for the current op
         category_id = operation.algorithm.fk_category
         algo_id = operation.fk_from_algo
-        raise cherrypy.HTTPRedirect("/flow/" + str(category_id) + "/" + str(algo_id))
+        self.redirect("/flow/" + str(category_id) + "/" + str(algo_id))
 
     @cherrypy.expose
     @handle_error(redirect=True)
@@ -533,7 +539,7 @@ class FlowController(BaseController):
             operation = OperationService.load_operation(int(first_op.id))
         self.simulator_controller.copy_simulator_configuration(operation.burst.id)
 
-        raise cherrypy.HTTPRedirect("/burst/")
+        self.redirect("/burst/")
 
     @expose_json
     def cancel_or_remove_operation(self, operation_id, is_group, remove_after_stop=False):
@@ -669,3 +675,18 @@ class FlowController(BaseController):
                                                   **parameters)
 
         return [True, 'Stored the exploration material successfully']
+
+    @cherrypy.expose
+    @using_template('form_fields/form_field')
+    @handle_error(redirect=False)
+    @check_user
+    def refresh_subform(self, data_name, subform_label, spatial_model_key):
+        data_class = TVBEnum.string_to_enum(self.enum_members, data_name).value
+
+        spatial_model = common.get_from_session(spatial_model_key)
+        equation_info = spatial_model.get_equation_information()
+        setattr(spatial_model, equation_info[subform_label], data_class())
+
+        adapter_form = get_form_for_equation(data_class)()
+
+        return {'adapter_form': adapter_form}

@@ -6,7 +6,7 @@
 # TheVirtualBrain-Scientific Package (for simulators). See content of the
 # documentation-folder for more details. See also http://www.thevirtualbrain.org
 #
-# (c) 2012-2020, Baycrest Centre for Geriatric Care ("Baycrest") and others
+# (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
 #
 # This program is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software Foundation,
@@ -37,15 +37,16 @@ Adapter that uses the traits module to generate interfaces for BalloonModel Anal
 
 import uuid
 import numpy
+
 from tvb.adapters.datatypes.db.time_series import TimeSeriesRegionIndex
 from tvb.adapters.datatypes.h5.time_series_h5 import TimeSeriesRegionH5
-from tvb.analyzers.fmri_balloon import BalloonModel
-from tvb.basic.neotraits.api import Float, Attr
+from tvb.analyzers.fmri_balloon import BalloonModel, BoldModels, NeuralInputTransformations
+from tvb.basic.neotraits.api import Float, Attr, EnumAttr
 from tvb.core.adapters.abcadapter import ABCAdapterForm, ABCAdapter
 from tvb.core.entities.filters.chain import FilterChain
 from tvb.core.neocom import h5
 from tvb.core.neotraits.db import prepare_array_shape_meta
-from tvb.core.neotraits.forms import TraitDataTypeSelectField, FloatField, StrField, BoolField
+from tvb.core.neotraits.forms import TraitDataTypeSelectField, FloatField, StrField, BoolField, SelectField
 from tvb.core.neotraits.view_model import ViewModel, DataTypeGidAttr
 from tvb.datatypes.time_series import TimeSeries, TimeSeriesRegion
 
@@ -56,14 +57,6 @@ class BalloonModelAdapterModel(ViewModel):
         label="Time Series",
         required=True,
         doc="""The timeseries that represents the input neural activity"""
-    )
-
-    dt = Float(
-        label=":math:`dt`",
-        default=0.002,
-        required=True,
-        doc="""The integration time step size for the balloon model (s).
-            If none is provided, by default, the TimeSeries sample period is used."""
     )
 
     tau_s = Float(
@@ -81,11 +74,9 @@ class BalloonModelAdapterModel(ViewModel):
             venous compartment. It is the  ratio of resting blood volume (V0) to
             resting blood flow (F0).""")
 
-    neural_input_transformation = Attr(
-        field_type=str,
+    neural_input_transformation = EnumAttr(
         label="Neural input transformation",
-        choices=("none", "abs_diff", "sum"),
-        default="none",
+        default=NeuralInputTransformations.NONE,
         doc=""" This represents the operation to perform on the state-variable(s) of
             the model used to generate the input TimeSeries. ``none`` takes the
             first state-variable as neural input; `` abs_diff`` is the absolute
@@ -93,11 +84,9 @@ class BalloonModelAdapterModel(ViewModel):
             ``sum``: sum all the state-variables of the input TimeSeries."""
     )
 
-    bold_model = Attr(
-        field_type=str,
+    bold_model = EnumAttr(
         label="Select BOLD model equations",
-        choices=("linear", "nonlinear"),
-        default="nonlinear",
+        default=BoldModels.NONLINEAR,
         doc="""Select the set of equations for the BOLD model."""
     )
 
@@ -110,6 +99,14 @@ class BalloonModelAdapterModel(ViewModel):
             Coefficients  k1, k2 and k3 will be derived accordingly."""
     )
 
+    normalize_neural_input = Attr(
+        field_type=bool,
+        label="Normalize neural input",
+        default=False,
+        required=True,
+        doc="""Set if the mean should be subtracted from the neural input."""
+    )
+
 
 class BalloonModelAdapterForm(ABCAdapterForm):
 
@@ -117,12 +114,12 @@ class BalloonModelAdapterForm(ABCAdapterForm):
         super(BalloonModelAdapterForm, self).__init__()
         self.time_series = TraitDataTypeSelectField(BalloonModelAdapterModel.time_series, name=self.get_input_name(),
                                                     conditions=self.get_filters(), has_all_option=True)
-        self.dt = FloatField(BalloonModelAdapterModel.dt)
         self.tau_s = FloatField(BalloonModelAdapterModel.tau_s)
         self.tau_f = FloatField(BalloonModelAdapterModel.tau_f)
-        self.neural_input_transformation = StrField(BalloonModelAdapterModel.neural_input_transformation)
-        self.bold_model = StrField(BalloonModelAdapterModel.bold_model)
+        self.neural_input_transformation = SelectField(BalloonModelAdapterModel.neural_input_transformation)
+        self.bold_model = SelectField(BalloonModelAdapterModel.bold_model)
         self.RBM = BoolField(BalloonModelAdapterModel.RBM)
+        self.normalize_neural_input = BoolField(BalloonModelAdapterModel.normalize_neural_input)
 
     @staticmethod
     def get_view_model():
@@ -171,22 +168,16 @@ class BalloonModelAdapter(ABCAdapter):
         self.log.debug("time_series shape is %s" % str(self.input_shape))
         # -------------------- Fill Algorithm for Analysis -------------------##
         algorithm = BalloonModel()
-
-        if view_model.dt is not None:
-            algorithm.dt = view_model.dt
-        else:
-            algorithm.dt = self.input_time_series_index.sample_period / 1000.
-
         if view_model.tau_s is not None:
             algorithm.tau_s = view_model.tau_s
         if view_model.tau_f is not None:
             algorithm.tau_f = view_model.tau_f
         if view_model.bold_model is not None:
             algorithm.bold_model = view_model.bold_model
-        if view_model.RBM is not None:
-            algorithm.RBM = view_model.RBM
         if view_model.neural_input_transformation is not None:
             algorithm.neural_input_transformation = view_model.neural_input_transformation
+        algorithm.RBM = view_model.RBM
+        algorithm.normalize_neural_input = view_model.normalize_neural_input
 
         self.algorithm = algorithm
 
@@ -219,7 +210,7 @@ class BalloonModelAdapter(ABCAdapter):
         time_line = input_time_series_h5.read_time_page(0, self.input_shape[0])
 
         bold_signal_index = TimeSeriesRegionIndex()
-        bold_signal_h5_path = h5.path_for(self.storage_path, TimeSeriesRegionH5, bold_signal_index.gid)
+        bold_signal_h5_path = self.path_for(TimeSeriesRegionH5, bold_signal_index.gid)
         bold_signal_h5 = TimeSeriesRegionH5(bold_signal_h5_path)
         bold_signal_h5.gid.store(uuid.UUID(bold_signal_index.gid))
         self._fill_result_h5(bold_signal_h5, input_time_series_h5)

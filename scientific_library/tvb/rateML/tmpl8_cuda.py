@@ -1,5 +1,37 @@
+// -*- coding: utf-8 -*-
+//
+//
+// TheVirtualBrain-Scientific Package. This package holds all simulators, and
+// analysers necessary to run brain-simulations. You can use it stand alone or
+// in conjunction with TheVirtualBrain-Framework Package. See content of the
+// documentation-folder for more details. See also http://www.thevirtualbrain.org
+//
+// (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
+//
+// This program is free software: you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with this
+// program.  If not, see <http://www.gnu.org/licenses/>.
+//
+//
+//   CITATION:
+// When using The Virtual Brain for scientific publications, please cite it as follows:
+//
+//  Paula Sanz Leon, Stuart A. Knock, M. Marmaduke Woodman, Lia Domide,
+//  Jochen Mersmann, Anthony R. McIntosh, Viktor Jirsa (2013)
+//      The Virtual Brain: a simulator of primate brain network dynamics.
+//   Frontiers in Neuroinformatics (7:10. doi: 10.3389/fninf.2013.00010)
+//
+//
+
 #include <stdio.h> // for printf
 #define PI_2 (2 * M_PI_F)
+#define PI M_PI_F
+#define INF INFINITY
 
 // buffer length defaults to the argument to the integrate kernel
 // but if it's known at compile time, it can be provided which allows
@@ -99,13 +131,13 @@ __global__ void ${modelname}(
     // conditional_derived variable declaration
     % for cd in dynamics.conditional_derived_variables:
     float ${cd.name} = 0.0;
-    % endfor /
-    % endif /
+    % endfor
+    % endif \
 
     % if noisepresent==True:
-    curandState crndst; /
-    curand_init(id * (blockDim.x * gridDim.x * gridDim.y), 0, 0, &crndst); /
-    % endif /
+    curandState crndst;
+    curand_init(id + (unsigned int) clock64(), 0, 0, &crndst);
+    % endif
 
     % for state_var in (dynamics.state_variables):
     float ${state_var.name} = ${state_var.dimension};
@@ -232,7 +264,7 @@ __global__ void ${modelname}(
             % endfor
             % endif /
 
-            // Integrate with stochastic forward euler
+            // Integrate with forward euler
             % for i, tim_der in enumerate(dynamics.time_derivatives):
             ${tim_der.variable} = dt * (${tim_der.value});
             % endfor
@@ -253,7 +285,7 @@ __global__ void ${modelname}(
             % for state_var in (dynamics.state_variables):
                 % if state_var.exposure == 'PI':
             ${state_var.name} = wrap_it_${state_var.exposure}(${state_var.name});
-                % else:
+                % elif (not state_var.exposure == "None" and not state_var.exposure == "none"):
             ${state_var.name} = wrap_it_${state_var.name}(${state_var.name});
                 % endif
             % endfor /
@@ -265,7 +297,7 @@ __global__ void ${modelname}(
 
             // Update the observable
             % for i, expo in enumerate(exposures):
-            tavg(i_node + ${i} * n_node) += ${expo.dimension}/n_step;
+            tavg(i_node + ${i} * n_node) += ${expo.name}/n_step;
             % endfor /
 
             // sync across warps executing nodes for single sim, before going on to next time step

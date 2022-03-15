@@ -64,7 +64,7 @@ class MontbrioT(ModelNumbaDfun):
 
     state_variable_range = Final(
         label="State Variable ranges [lo, hi]",
-        default={"r": numpy.array([0., 2.0]), 
+        default={"r": numpy.array([0.0, -2.0]), 
 				 "V": numpy.array([-2.0, 1.5])},
         doc="""state variables"""
     )
@@ -79,6 +79,7 @@ class MontbrioT(ModelNumbaDfun):
         label="Variables or quantities available to Monitors",
         choices=('r', 'V', ),
         default=('r', 'V', ),
+
         doc="Variables to monitor"
     )
 
@@ -107,5 +108,5 @@ def _numba_dfun_MontbrioT(vw, coupling, tau, I, Delta, J, eta, Gamma, cr, cv, lo
 
 
     dx[0] = 1/tau * (Delta / (pi * tau) + 2 * V * r)
-    dx[1] = 1/tau * (V ** 2 - pi ** 2 * tau ** 2 * r ** 2 + eta + J * tau * r + I + cr * c_pop0 + cv * c_pop1)
+    dx[1] = 1/tau * (V**2 - pi**2 * tau**2 * r**2 + eta + J * tau * r + I + cr * c_pop0 + cv * c_pop1)
     

@@ -13,7 +13,7 @@ RUN conda install python=3.7 nomkl numba scipy numpy networkx scikit-learn cytho
     pytest pytest-cov pytest-benchmark pytest-mock matplotlib \
     psycopg2 pytables scikit-image==0.14.2 simplejson cherrypy docutils
 
-RUN apt-get install -y zip wget
+RUN apt-get install -y zip unzip
 RUN cd /opt \
  && wget -q https://zenodo.org/record/4263723/files/tvb_data.zip?download=1 -O tvb_data.zip \
  && mkdir tvb_data \
@@ -22,8 +22,21 @@ RUN cd /opt \
  && cd tvb_data \
  && python3 setup.py develop
 
-RUN pip install h5py>=2.10 tvb-gdist pytest-xdist sqlalchemy
+RUN pip install h5py>=2.10 pytest-xdist sqlalchemy mako pylems lxml requests autopep8
 
+<<<<<<< HEAD
 RUN pip install mako pylems lxml pycuda
 
 RUN apt-get install -y nvidia-utils-470
+=======
+RUN pip install --no-build-isolation tvb-gdist
+
+# required for rateML CUDA work
+# RUN conda install cudatoolkit \
+#  && conda install -c conda-forge cudatoolkit-dev \
+#  && pip install pycuda
+
+# docker run --rm -it -v $PWD:/tvb -w /tvb tvb/lib 
+# add --gpus all for testing CUDA
+CMD ["/bin/bash", "-c", "cd tvb_bin; python3 setup.py develop --no-deps; cd ../scientific_library; python3 setup.py develop --no-deps; python3 -m pytest -n12"]
+>>>>>>> upstream/master

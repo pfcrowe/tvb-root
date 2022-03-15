@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 #
 #
-#  TheVirtualBrain-Scientific Package. This package holds all simulators, and
+# TheVirtualBrain-Scientific Package. This package holds all simulators, and
 # analysers necessary to run brain-simulations. You can use it stand alone or
 # in conjunction with TheVirtualBrain-Framework Package. See content of the
 # documentation-folder for more details. See also http://www.thevirtualbrain.org
 #
-# (c) 2012-2020, Baycrest Centre for Geriatric Care ("Baycrest") and others
+# (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
 #
 # This program is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software Foundation,
@@ -202,7 +202,7 @@ class Epileptor(ModelNumbaDfun):
         doc="External input current to the second population")
 
     tau = NArray(
-        label=":math:`\\tau`",
+        label=r":math:`\tau`",
         default=numpy.array([10.0]),
         doc="Temporal scaling coefficient in fifth state variable")
 
@@ -414,8 +414,8 @@ class Epileptor2D(ModelNumbaDfun):
         label=":math:`r`",
         domain=Range(lo=0.0, hi=0.001, step=0.00005),
         default=numpy.array([0.00035]),
-        doc="Temporal scaling in the slow state-variable, \
-        called :math:`1\\tau_{0}` in Jirsa paper (see class Epileptor).")
+        doc=r"Temporal scaling in the slow state-variable, \
+        called :math:`1\tau_{0}` in Jirsa paper (see class Epileptor).")
 
     x0 = NArray(
         label=":math:`x_0`",

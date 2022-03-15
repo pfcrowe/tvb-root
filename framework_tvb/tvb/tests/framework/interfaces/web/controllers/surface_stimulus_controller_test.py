@@ -6,7 +6,7 @@
 # TheVirtualBrain-Scientific Package (for simulators). See content of the
 # documentation-folder for more details. See also http://www.thevirtualbrain.org
 #
-# (c) 2012-2020, Baycrest Centre for Geriatric Care ("Baycrest") and others
+# (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
 #
 # This program is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software Foundation,
@@ -35,7 +35,7 @@
 from tvb.tests.framework.interfaces.web.controllers.base_controller_test import BaseTransactionalControllerTest
 from tvb.interfaces.web.controllers.common import get_from_session
 from tvb.interfaces.web.controllers.spatial.surface_stimulus_controller import SurfaceStimulusController
-from tvb.interfaces.web.controllers.spatial.surface_stimulus_controller import KEY_SURFACE_STIMULI
+from tvb.interfaces.web.controllers.spatial.surface_stimulus_controller import KEY_SURFACE_STIMULUS
 
 
 class TestSurfaceStimulusController(BaseTransactionalControllerTest):
@@ -61,7 +61,7 @@ class TestSurfaceStimulusController(BaseTransactionalControllerTest):
     def test_step_2(self, surface_index_factory):
         surface_index, _ = surface_index_factory()
         self.surface_s_c.step_1_submit(1, 1)
-        context = get_from_session(KEY_SURFACE_STIMULI)
+        context = get_from_session(KEY_SURFACE_STIMULUS)
         context.surface = surface_index.gid
         result_dict = self.surface_s_c.step_2()
         expected_keys = ['urlVerticesPick', 'urlVertices', 'urlTrianglesPick', 'urlTriangles',

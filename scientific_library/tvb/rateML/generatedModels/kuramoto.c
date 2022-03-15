@@ -1,5 +1,7 @@
 #include <stdio.h> // for printf
 #define PI_2 (2 * M_PI_F)
+#define PI M_PI_F
+#define INF INFINITY
 
 // buffer length defaults to the argument to the integrate kernel
 // but if it's known at compile time, it can be provided which allows
@@ -60,7 +62,7 @@ __global__ void kuramoto(
     const float a = 1;
 
     // coupling parameters
-    float c_pop1 = 0.0;
+    float c_pop0 = 0.0;
 
     // derived parameters
     const float rec_n = 1.0f / n_node;
@@ -68,9 +70,8 @@ __global__ void kuramoto(
     const float nsig = sqrt(dt) * sqrt(2.0 * 1e-5);
 
 
-
-    curandState crndst; /
-    curand_init(id * (blockDim.x * gridDim.x * gridDim.y), 0, 0, &crndst); /
+    curandState crndst;
+    curand_init(id + (unsigned int) clock64(), 0, 0, &crndst);
 
     float V = 0.0;
 
@@ -97,7 +98,7 @@ __global__ void kuramoto(
     //***// This is the loop over nodes, which also should stay the same
         for (int i_node = 0; i_node < n_node; i_node++)
         {
-            c_pop1 = 0.0f;
+            c_pop0 = 0.0f;
 
             if (t == (i_step)){
                 tavg(i_node + 0 * n_node) = 0;
@@ -124,15 +125,15 @@ __global__ void kuramoto(
                 V_j = state(((t - dij_i + nh) % nh), j_node + 0 * n_node);
 
                 // Sum it all together using the coupling function. Kuramoto coupling: (postsyn * presyn) == ((a) * (sin(xj - xi))) 
-                c_pop1 += wij * a * sin(V_j - V);
+                c_pop0 += wij * a * sin(V_j - V);
             } // j_node */
 
             // global coupling handling, rec_n used to scale nodes
-            c_pop1 *= global_coupling;
+            c_pop0 *= global_coupling;
 
 
-            // Integrate with stochastic forward euler
-            dV = dt * (omega + c_pop1);
+            // Integrate with forward euler
+            dV = dt * (omega + c_pop0);
 
             // Add noise because component_type Noise is present in model
             V += nsig * curand_normal(&crndst) + dV;

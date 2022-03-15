@@ -6,7 +6,7 @@
 # TheVirtualBrain-Scientific Package (for simulators). See content of the
 # documentation-folder for more details. See also http://www.thevirtualbrain.org
 #
-# (c) 2012-2020, Baycrest Centre for Geriatric Care ("Baycrest") and others
+# (c) 2012-2022, Baycrest Centre for Geriatric Care ("Baycrest") and others
 #
 # This program is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software Foundation,
@@ -34,82 +34,22 @@
 """
 
 import json
-
 import cherrypy
-from tvb.adapters.simulator.equation_forms import get_form_for_equation
-from tvb.adapters.simulator.model_forms import get_model_to_form_dict
-from tvb.adapters.simulator.subform_helper import SubformHelper
-from tvb.adapters.simulator.subforms_mapping import get_ui_name_to_equation_dict, GAUSSIAN_EQUATION, SIGMOID_EQUATION
-from tvb.basic.neotraits.api import Attr, Float
-from tvb.core.adapters.abcadapter import ABCAdapterForm
+
+from tvb.adapters.forms.equation_forms import get_form_for_equation
+from tvb.adapters.forms.equation_plot_forms import EquationPlotForm
+from tvb.adapters.forms.model_forms import get_model_to_form_dict
+from tvb.adapters.forms.surface_model_parameters_form import SurfaceModelParametersForm, KEY_CONTEXT_MPS
 from tvb.core.entities import load
-from tvb.core.neotraits.forms import Form, FormField, SelectField, FloatField
-from tvb.core.neotraits.view_model import Str
 from tvb.core.services.burst_config_serialization import SerializationManager
-from tvb.datatypes.equations import Gaussian, SpatialApplicableEquation
 from tvb.interfaces.web.controllers import common
 from tvb.interfaces.web.controllers.autologging import traced
 from tvb.interfaces.web.controllers.base_controller import BaseController
-from tvb.interfaces.web.controllers.decorators import expose_page, expose_fragment, handle_error, check_user, \
-    using_template
+from tvb.interfaces.web.controllers.decorators import expose_page, expose_fragment, handle_error, check_user
 from tvb.interfaces.web.controllers.simulator.simulator_controller import SimulatorWizzardURLs
 from tvb.interfaces.web.controllers.spatial.base_spatio_temporal_controller import SpatioTemporalController
 from tvb.interfaces.web.entities.context_model_parameters import SurfaceContextModelParameters
 from tvb.interfaces.web.entities.context_simulator import SimulatorContext
-
-### SESSION KEY for ContextModelParameter entity.
-KEY_CONTEXT_MPS = "ContextForModelParametersOnSurface"
-
-
-class SurfaceModelParametersForm(ABCAdapterForm):
-    NAME_EQATION_PARAMS_DIV = 'equation_params'
-    default_equation = Gaussian
-    ui_name_to_equation_dict = get_ui_name_to_equation_dict()
-    equation_choices = {GAUSSIAN_EQUATION: ui_name_to_equation_dict.get(GAUSSIAN_EQUATION),
-                        SIGMOID_EQUATION: ui_name_to_equation_dict.get(SIGMOID_EQUATION)}
-
-    def __init__(self, model_params):
-        super(SurfaceModelParametersForm, self).__init__()
-
-        self.model_param = SelectField(Str(label='Model parameter'), choices=model_params, name='model_param')
-        self.equation = SelectField(Attr(SpatialApplicableEquation, label='Equation', default=self.default_equation),
-                                    choices=self.equation_choices, name='equation',
-                                    subform=get_form_for_equation(self.default_equation))
-
-    @staticmethod
-    def get_required_datatype():
-        return None
-
-    @staticmethod
-    def get_input_name():
-        return None
-
-    @staticmethod
-    def get_filters():
-        return None
-
-    def fill_from_trait(self, trait):
-        self.equation.data = type(trait)
-        self.equation.subform_field = FormField(get_form_for_equation(type(trait)),
-                                                self.NAME_EQATION_PARAMS_DIV)
-        self.equation.subform_field.form.fill_from_trait(trait)
-
-
-class EquationPlotForm(Form):
-    def __init__(self):
-        super(EquationPlotForm, self).__init__()
-        self.min_x = FloatField(Float(label='Min distance(mm)', default=0,
-                                      doc="The minimum value of the x-axis for spatial equation plot."),
-                                name='min_x')
-        self.max_x = FloatField(Float(label='Max distance(mm)', default=100,
-                                      doc="The maximum value of the x-axis for spatial equation plot."),
-                                name='max_x')
-
-    def fill_from_post(self, form_data):
-        if self.min_x.name in form_data:
-            self.min_x.fill_from_post(form_data)
-        if self.max_x.name in form_data:
-            self.max_x.fill_from_post(form_data)
 
 
 @traced
@@ -126,6 +66,7 @@ class SurfaceModelParametersController(SpatioTemporalController):
     def __init__(self):
         super(SurfaceModelParametersController, self).__init__()
         self.simulator_context = SimulatorContext()
+        self.model_params_list = None
 
     def get_data_from_burst_configuration(self):
         """
@@ -144,21 +85,18 @@ class SurfaceModelParametersController(SpatioTemporalController):
         except Exception:
             self.logger.exception("Some of the provided parameters have an invalid value.")
             common.set_error_message("Some of the provided parameters have an invalid value.")
-            raise cherrypy.HTTPRedirect("/burst/")
+            self.redirect("/burst/")
 
         cortex = des.conf.surface
         return model, cortex
 
-    def _prepare_model_params_dict(self, model):
+    def _prepare_model_params_list(self, model):
         model_form = get_model_to_form_dict().get(type(model))
-        model_params = model_form.get_params_configurable_in_phase_plane()
+        model_params = model_form().get_params_configurable_in_phase_plane()
         if len(model_params) == 0:
             self.logger.warning("The list with configurable parameters for the current model is empty!")
-        model_params_dict = {}
 
-        for param in model_params:
-            model_params_dict.update({param: param})
-        return model_params_dict
+        return model_params
 
     def _fill_form_from_context(self, config_form, context):
         if context.current_model_param in context.applied_equations:
@@ -168,7 +106,7 @@ class SurfaceModelParametersController(SpatioTemporalController):
             config_form.equation.subform_field.form = get_form_for_equation(type(current_equation))()
             config_form.equation.subform_field.form.fill_from_trait(current_equation)
         else:
-            context.current_equation = SurfaceModelParametersForm.default_equation()
+            context.current_equation = SurfaceModelParametersForm.default_equation.instance
             config_form.equation.data = type(context.current_equation)
             config_form.equation.subform_field.form.fill_from_trait(context.current_equation)
 
@@ -179,13 +117,14 @@ class SurfaceModelParametersController(SpatioTemporalController):
         }
         template_specification.update({'applied_equations': context.get_configure_info()})
 
-        config_form = SurfaceModelParametersForm(self.model_params_dict)
+        config_form = SurfaceModelParametersForm(self.model_params_list)
         config_form.model_param.data = context.current_model_param
         self._fill_form_from_context(config_form, context)
         template_specification.update({'adapter_form': self.render_adapter_form(config_form)})
 
         parameters_equation_plot_form = EquationPlotForm()
-        template_specification.update({'parametersEquationPlotForm': self.render_adapter_form(parameters_equation_plot_form)})
+        template_specification.update({'parametersEquationPlotForm': self.render_adapter_form(
+            parameters_equation_plot_form)})
         return template_specification
 
     @expose_page
@@ -197,16 +136,16 @@ class SurfaceModelParametersController(SpatioTemporalController):
         surface_gid = cortex.surface_gid
         surface_index = load.load_entity_by_gid(surface_gid)
 
-        self.model_params_dict = self._prepare_model_params_dict(model)
+        self.model_params_list = self._prepare_model_params_list(model)
         context_model_parameters = SurfaceContextModelParameters(surface_index, model,
-                                                                 SurfaceModelParametersForm.default_equation(),
-                                                                 list(self.model_params_dict.values())[0])
+                                                                 SurfaceModelParametersForm.default_equation,
+                                                                 self.model_params_list[0].name)
         common.add2session(KEY_CONTEXT_MPS, context_model_parameters)
 
         template_specification = dict(title="Spatio temporal - Model parameters")
         template_specification.update(self.display_surface(surface_gid.hex, cortex.region_mapping_data))
 
-        dummy_form_for_initialization = SurfaceModelParametersForm(self.model_params_dict)
+        dummy_form_for_initialization = SurfaceModelParametersForm(self.model_params_list)
         self.plotted_equation_prefixes = {
             self.MODEL_PARAM_FIELD: dummy_form_for_initialization.model_param.name,
             self.EQUATION_FIELD: dummy_form_for_initialization.equation.name,
@@ -214,7 +153,7 @@ class SurfaceModelParametersController(SpatioTemporalController):
         }
         template_specification.update(self._prepare_reload(context_model_parameters))
         template_specification.update(
-            submit_parameters_url='/spatial/modelparameters/surface/submit_model_parameters',
+            submit_parameters_url=self.build_path('/spatial/modelparameters/surface/submit_model_parameters'),
             mainContent='spatial/model_param_surface_main',
             submitSurfaceParametersBtn=True
         )
@@ -227,18 +166,6 @@ class SurfaceModelParametersController(SpatioTemporalController):
 
         template_specification = self._prepare_reload(context)
         return self.fill_default_attributes(template_specification)
-
-    @cherrypy.expose
-    @using_template("form_fields/form_field")
-    @handle_error(redirect=False)
-    @check_user
-    def refresh_subform(self, equation, mapping_key):
-        eq_class = get_ui_name_to_equation_dict().get(equation)
-        context = common.get_from_session(KEY_CONTEXT_MPS)
-        context.current_equation = eq_class()
-
-        eq_params_form = SubformHelper.get_subform_for_field_value(equation, mapping_key)
-        return {'adapter_form': eq_params_form, 'equationsPrefixes': self.plotted_equation_prefixes}
 
     @cherrypy.expose
     def set_equation_param(self, **param):
@@ -310,17 +237,17 @@ class SurfaceModelParametersController(SpatioTemporalController):
             context_model_parameters = common.get_from_session(KEY_CONTEXT_MPS)
             simulator = self.simulator_context.simulator
 
-            for param_name in self.model_params_dict.values():
-                param_data = context_model_parameters.get_data_for_model_param(param_name)
+            for param in list(self.model_params_list):
+                param_data = context_model_parameters.get_data_for_model_param(param.name)
                 if param_data is None:
                     continue
-                setattr(simulator.model, param_name, param_data)
+                setattr(simulator.model, param.name, param_data)
             ### Update in session the last loaded URL for burst-page.
             self.simulator_context.add_last_loaded_form_url_to_session(SimulatorWizzardURLs.SET_INTEGRATOR_URL)
 
         ### Clean from session drawing context
         common.remove_from_session(KEY_CONTEXT_MPS)
-        raise cherrypy.HTTPRedirect("/burst/")
+        self.redirect("/burst/")
 
     def fill_default_attributes(self, template_dictionary):
         """
