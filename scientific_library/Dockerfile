@@ -1,13 +1,6 @@
-# FROM continuumio/miniconda3
-FROM nvidia/cuda:11.2.2-devel-ubuntu20.04
+FROM continuumio/miniconda3
 
 RUN apt-get -y update && apt-get -y install build-essential gcc
-RUN apt-get install -y curl 
-
-WORKDIR /opt
-RUN curl -LO https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-RUN bash Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda
-ENV PATH=/opt/conda/bin:$PATH
 
 RUN conda install python=3.7 nomkl numba scipy numpy networkx scikit-learn cython pip numexpr psutil \
     pytest pytest-cov pytest-benchmark pytest-mock matplotlib \
@@ -24,11 +17,6 @@ RUN cd /opt \
 
 RUN pip install h5py>=2.10 pytest-xdist sqlalchemy mako pylems lxml requests autopep8
 
-<<<<<<< HEAD
-RUN pip install mako pylems lxml pycuda
-
-RUN apt-get install -y nvidia-utils-470
-=======
 RUN pip install --no-build-isolation tvb-gdist
 
 # required for rateML CUDA work
@@ -39,4 +27,3 @@ RUN pip install --no-build-isolation tvb-gdist
 # docker run --rm -it -v $PWD:/tvb -w /tvb tvb/lib 
 # add --gpus all for testing CUDA
 CMD ["/bin/bash", "-c", "cd tvb_bin; python3 setup.py develop --no-deps; cd ../scientific_library; python3 setup.py develop --no-deps; python3 -m pytest -n12"]
->>>>>>> upstream/master
